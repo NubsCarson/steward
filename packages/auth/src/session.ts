@@ -5,7 +5,9 @@
  * available to all packages via the monorepo workspace.
  */
 
+import { randomUUID } from "node:crypto";
 import { type JWTPayload, jwtVerify, SignJWT } from "jose";
+import { assertTokenNotRevoked, revocationStore, TokenRevokedError } from "./revocation.js";
 
 // ─── Config ────────────────────────────────────────────────────────────────
 
@@ -25,6 +27,7 @@ export interface SessionConfig {
 
 export interface SessionPayload extends JWTPayload {
   userId: string;
+  jti: string;
   [key: string]: unknown;
 }
 
@@ -63,6 +66,7 @@ export class SessionManager {
       .setProtectedHeader({ alg: "HS256" })
       .setIssuer(this.issuer)
       .setIssuedAt(now)
+      .setJti(randomUUID())
       .setExpirationTime(this.expiresIn as Parameters<SignJWT["setExpirationTime"]>[0]);
 
     return builder.sign(this.secret);
@@ -83,24 +87,38 @@ export class SessionManager {
         algorithms: ["HS256"],
       });
 
-      // Sanity-check our custom claim is present
-      if (typeof payload.userId !== "string") {
+      // Sanity-check our custom claims are present
+      if (typeof payload.userId !== "string" || typeof payload.jti !== "string") {
         return null;
       }
 
+      await assertTokenNotRevoked(payload);
+
       return payload as SessionPayload;
-    } catch {
+    } catch (err) {
+      if (err instanceof TokenRevokedError) throw err;
       // Covers JWTExpired, JWTInvalid, JWSInvalid, etc.
       return null;
     }
   }
 
   /**
-   * Invalidate a session token.
-   * JWT revocation needs a server-side blocklist, so this default implementation is a no-op.
+   * Invalidate a session token by adding its JTI to the revocation store until
+   * the token's natural expiry. Redis shares this across instances; without
+   * REDIS_URL the store is in-memory for single-instance/embedded mode.
    *
-   * @param _token  The token to invalidate
+   * @param token  The token to invalidate
    */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async invalidateSession(_token: string): Promise<void> {}
+  async invalidateSession(token: string): Promise<void> {
+    const { payload } = await jwtVerify(token, this.secret, {
+      issuer: this.issuer,
+      algorithms: ["HS256"],
+    });
+
+    if (typeof payload.jti !== "string" || typeof payload.exp !== "number") {
+      throw new Error("Session token is missing revocable jti/exp claims");
+    }
+
+    await revocationStore.revokeToken(payload.jti, payload.exp);
+  }
 }

@@ -13,6 +13,7 @@
     "@simplewebauthn/server": "^13",
     "@stwd/db": "workspace:*",
     "@stwd/shared": "workspace:*",
+    "ioredis": "^5.10.1",
     "hono": "^4.7.0",
     "resend": "^6.9.4"
   },
