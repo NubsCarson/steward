@@ -68,18 +68,27 @@ export interface PolicyCreatePayload {
 export interface PolicySimulatePayload {
   policyId: string;
   agentId: string;
-  request: {
-    method?: string;
-    url?: string;
-    value?: string;
-    data?: string;
-  };
+  request:
+    | {
+        kind: "proxy";
+        method: string;
+        url: string;
+        value?: string;
+        data?: string;
+      }
+    | {
+        kind?: "transaction";
+        to: string;
+        value: string;
+        data?: string;
+        chainId?: number;
+      };
 }
 
 export interface PolicySimulateResult {
-  allowed: boolean;
-  reason?: string;
-  matchedRules: string[];
+  approved: boolean;
+  requiresManualApproval: boolean;
+  results: Array<{ type: string; passed: boolean; reason?: string }>;
 }
 
 // ---- Audit ----
