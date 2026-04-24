@@ -34,7 +34,7 @@
  *   3. The JWT's `tenantId` claim is the resolved tenant, not the personal tenant.
  */
 
-import { createPublicKey, randomBytes, verify as verifySignature } from "node:crypto";
+import { createPublicKey, randomBytes, randomUUID, verify as verifySignature } from "node:crypto";
 import {
   buildBackend,
   ChallengeStore,
@@ -47,6 +47,8 @@ import {
   OAuthClient,
   PasskeyAuth,
   ResendProvider,
+  revocationStore,
+  assertTokenNotRevoked,
   TokenStore,
   uint8ArrayToBase64url,
 } from "@stwd/auth";
@@ -170,6 +172,7 @@ export async function createSessionToken(
   return new SignJWT({ address, tenantId, ...extra })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
+    .setJti(randomUUID())
     .setIssuer(JWT_ISSUER)
     .setExpirationTime(ACCESS_TOKEN_EXPIRY)
     .sign(JWT_SECRET);
@@ -245,6 +248,7 @@ export async function verifySessionToken(token: string): Promise<{
     const { payload } = await jwtVerify(token, JWT_SECRET, {
       issuer: JWT_ISSUER,
     });
+    await assertTokenNotRevoked(payload);
     return payload as {
       address: string;
       tenantId: string;
@@ -1171,9 +1175,23 @@ auth.get("/session", async (c) => {
 
 /**
  * POST /logout
- * JWT is stateless — client drops the token.
+ * Revokes the presented access token's JTI until its natural expiry. Refresh
+ * token revocation is handled by /refresh/revoke and /refresh/revoke-all.
  */
-auth.post("/logout", (c) => c.json<ApiResponse>({ ok: true }));
+auth.post("/logout", async (c) => {
+  const authHeader = c.req.header("Authorization");
+  if (authHeader?.startsWith("Bearer ")) {
+    try {
+      const { payload } = await jwtVerify(authHeader.slice(7), JWT_SECRET, { issuer: JWT_ISSUER });
+      if (typeof payload.jti === "string" && typeof payload.exp === "number") {
+        await revocationStore.revokeToken(payload.jti, payload.exp);
+      }
+    } catch {
+      // Logout remains idempotent: invalid/expired tokens are already unusable.
+    }
+  }
+  return c.json<ApiResponse>({ ok: true });
+});
 
 /**
  * POST /refresh

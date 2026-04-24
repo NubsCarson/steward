@@ -6,7 +6,8 @@
  * re-instantiate them (which would lead to duplicate connections / inconsistent state).
  */
 
-import { validateApiKey } from "@stwd/auth";
+import { randomUUID } from "node:crypto";
+import { assertTokenNotRevoked, validateApiKey } from "@stwd/auth";
 import { getDb, policies, tenants, toPolicyRule, transactions } from "@stwd/db";
 import { PolicyEngine } from "@stwd/policy-engine";
 import {
@@ -58,6 +59,7 @@ export async function createSessionToken(address: string, tenantId: string): Pro
   return new SignJWT({ address, tenantId })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
+    .setJti(randomUUID())
     .setIssuer(JWT_ISSUER)
     .setExpirationTime(JWT_EXPIRY)
     .sign(JWT_SECRET);
@@ -71,6 +73,7 @@ export async function createAgentToken(
   return new SignJWT({ agentId, tenantId, scope: "agent" })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
+    .setJti(randomUUID())
     .setIssuer(JWT_ISSUER)
     .setExpirationTime(expiresIn || AGENT_TOKEN_EXPIRY)
     .sign(JWT_SECRET);
@@ -81,6 +84,7 @@ export async function verifySessionToken(token: string) {
     const { payload } = await jwtVerify(token, JWT_SECRET, {
       issuer: JWT_ISSUER,
     });
+    await assertTokenNotRevoked(payload);
     return payload as {
       address: string;
       tenantId: string;
