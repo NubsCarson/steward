@@ -53,7 +53,7 @@ if (!jwtSecretSource) {
 }
 export const JWT_SECRET = new TextEncoder().encode(jwtSecretSource || "dev-secret");
 export const JWT_ISSUER = "steward";
-export const JWT_EXPIRY = "24h";
+export const JWT_EXPIRY = "15m";
 
 export async function createSessionToken(address: string, tenantId: string): Promise<string> {
   return new SignJWT({ address, tenantId })
