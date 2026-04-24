@@ -134,6 +134,13 @@
       "when": 1775098100000,
       "tag": "0018_tenant_owner_address_widen",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1777026834865,
+      "tag": "0019_proxy_audit_reason",
+      "breakpoints": true
     }
   ]
 }
